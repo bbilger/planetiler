@@ -58,7 +58,8 @@ public class TileArchives {
         new StreamArchiveConfig(config, options));
       case JSON -> WriteableJsonStreamArchive.newWriteToFile(archive.getLocalPath(),
         new StreamArchiveConfig(config, options));
-      case FILES -> WriteableFilesArchive.newWriter(archive.getLocalPath(), options, config.force() || config.append());
+      case FILES -> WriteableFilesArchive.newWriter(archive.getLocalPath(), archive.scheme(), options,
+        config.force() || config.append());
     };
   }
 

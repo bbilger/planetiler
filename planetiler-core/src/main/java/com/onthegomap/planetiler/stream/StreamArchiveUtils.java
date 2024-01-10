@@ -4,7 +4,6 @@ import com.google.common.net.UrlEscapers;
 import com.onthegomap.planetiler.archive.TileArchiveConfig;
 import com.onthegomap.planetiler.config.Arguments;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -17,7 +16,7 @@ public final class StreamArchiveUtils {
   private StreamArchiveUtils() {}
 
   public static Path constructIndexedPath(Path basePath, int index) {
-    return index == 0 ? basePath : Paths.get(basePath.toString() + index);
+    return index == 0 ? basePath : basePath.getParent().resolve(basePath.getFileName().toString() + index);
   }
 
   static String getEscapedString(Arguments options, TileArchiveConfig.Format format, String key,

@@ -2,9 +2,8 @@ package com.onthegomap.planetiler.files;
 
 import com.onthegomap.planetiler.geo.TileCoord;
 import com.onthegomap.planetiler.geo.TileOrder;
-import java.io.File;
+import java.nio.file.FileSystem;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
@@ -73,7 +72,7 @@ public class TileSchemeEncoding {
    * @param basePath   the base path to append the generated relative tile path to
    */
   public TileSchemeEncoding(String tileScheme, Path basePath) {
-    this.tileScheme = validate(tileScheme);
+    this.tileScheme = validate(basePath.getFileSystem(), tileScheme);
     this.basePath = basePath;
   }
 
@@ -86,19 +85,18 @@ public class TileSchemeEncoding {
 
       if (xSafe) {
         final String colStr = String.format("%06d", tileCoord.x());
-        p = p.replace(X_SAFE_TEMPLATE, Paths.get(colStr.substring(0, 3), colStr.substring(3)).toString());
+        p = p.replace(X_SAFE_TEMPLATE, getPath(colStr.substring(0, 3), colStr.substring(3)).toString());
       } else {
         p = p.replace(X_TEMPLATE, Integer.toString(tileCoord.x()));
       }
 
       if (ySafe) {
         final String rowStr = String.format("%06d", tileCoord.y());
-        p = p.replace(Y_SAFE_TEMPLATE, Paths.get(rowStr.substring(0, 3), rowStr.substring(3)).toString());
+        p = p.replace(Y_SAFE_TEMPLATE, getPath(rowStr.substring(0, 3), rowStr.substring(3)).toString());
       } else {
         p = p.replace(Y_TEMPLATE, Integer.toString(tileCoord.y()));
       }
-
-      return basePath.resolve(Paths.get(p));
+      return basePath.resolve(p);
     };
   }
 
@@ -106,7 +104,7 @@ public class TileSchemeEncoding {
 
     final String tmpPath = basePath.resolve(tileScheme).toAbsolutePath().toString();
 
-    @SuppressWarnings("java:S1075") final String escapedPathSeparator = "\\" + File.separator;
+    @SuppressWarnings("java:S1075") final String escapedPathSeparator = "\\" + basePath.getFileSystem().getSeparator();
 
     final Pattern pathPattern = Pattern.compile(
       Pattern.quote(tmpPath)
@@ -134,7 +132,7 @@ public class TileSchemeEncoding {
   }
 
   int searchDepth() {
-    return Paths.get(tileScheme).getNameCount() +
+    return getPath(tileScheme).getNameCount() +
       StringUtils.countMatches(tileScheme, X_SAFE_TEMPLATE) +
       StringUtils.countMatches(tileScheme, Y_SAFE_TEMPLATE);
   }
@@ -144,8 +142,8 @@ public class TileSchemeEncoding {
     return TileOrder.TMS;
   }
 
-  private static String validate(String tileScheme) {
-    if (Paths.get(tileScheme).isAbsolute()) {
+  private static String validate(FileSystem fileSystem, String tileScheme) {
+    if (fileSystem.getPath(tileScheme).isAbsolute()) {
       throw new IllegalArgumentException("tile scheme is not allowed to be absolute");
     }
     if (StringUtils.countMatches(tileScheme, Z_TEMPLATE) != 1 ||
@@ -160,6 +158,11 @@ public class TileSchemeEncoding {
       throw new IllegalArgumentException("regex quotes are not allowed");
     }
     return tileScheme;
+  }
+
+  // get/create a path using the basePath's file system
+  private Path getPath(String first, String... more) {
+    return basePath.getFileSystem().getPath(first, more);
   }
 
   @Override

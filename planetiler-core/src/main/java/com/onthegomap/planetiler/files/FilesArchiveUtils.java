@@ -6,7 +6,6 @@ import static com.onthegomap.planetiler.files.TileSchemeEncoding.Z_TEMPLATE;
 
 import com.onthegomap.planetiler.config.Arguments;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -26,11 +25,11 @@ public final class FilesArchiveUtils {
     if ("none".equals(metadataPathRaw)) {
       return Optional.empty();
     } else {
-      final Path p = Paths.get(metadataPathRaw);
+      final Path p = basePath.getFileSystem().getPath(metadataPathRaw);
       if (p.isAbsolute()) {
         return Optional.of(p);
       }
-      return Optional.of(basePath.resolve(p));
+      return Optional.of(basePath.resolve(metadataPathRaw));
     }
   }
 
@@ -66,7 +65,7 @@ public final class FilesArchiveUtils {
 
   private record SplitShortcutPath(Path basePart, Path tileSchemePart) {
     public static SplitShortcutPath split(Path basePath) {
-      Path basePart = Objects.requireNonNullElse(basePath.getRoot(), Paths.get(""));
+      Path basePart = Objects.requireNonNullElse(basePath.getRoot(), basePath.getFileSystem().getPath(""));
       Path tileSchemePart = null;
 
       boolean remainingIsTileScheme = false;

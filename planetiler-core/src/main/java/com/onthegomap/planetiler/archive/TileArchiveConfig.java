@@ -14,8 +14,11 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -44,6 +47,13 @@ public record TileArchiveConfig(
   URI uri,
   Map<String, String> options
 ) {
+
+  public TileArchiveConfig {
+    if (!format.isSchemeSupported(scheme)) {
+      throw new IllegalArgumentException("scheme " + scheme + " is not supported by the format " + format);
+    }
+
+  }
 
   // be more generous and encode some characters for the users
   private static final Map<String, String> URI_ENCODINGS = Map.of(
@@ -152,7 +162,9 @@ public record TileArchiveConfig(
    * repository).
    */
   public Path getLocalPath() {
-    return scheme == Scheme.FILE ? Path.of(URI.create(uri.toString().replaceAll("\\?.*$", ""))) : null;
+    return switch (scheme) {
+      case FILE, S3, S3_EXTENSION -> Path.of(URI.create(uri.toString().replaceAll("\\?.*$", "")));
+    };
   }
 
   /**
@@ -171,9 +183,7 @@ public record TileArchiveConfig(
    * Deletes the archive if possible.
    */
   public void delete() {
-    if (scheme == Scheme.FILE) {
-      FileUtils.delete(getLocalBasePath());
-    }
+    FileUtils.delete(getLocalBasePath());
   }
 
   /**
@@ -232,11 +242,11 @@ public record TileArchiveConfig(
   public enum Format {
     MBTILES("mbtiles",
       false /* TODO mbtiles could support append in the future by using insert statements with an "on conflict"-clause (i.e. upsert) and by creating tables only if they don't exist, yet */,
-      false, TileOrder.TMS),
-    PMTILES("pmtiles", false, false, TileOrder.HILBERT),
+      false, TileOrder.TMS, Scheme.FILE),
+    PMTILES("pmtiles", false, false, TileOrder.HILBERT, Scheme.FILE),
 
     // should be before PBF in order to avoid collisions
-    FILES("files", true, true, TileOrder.TMS) {
+    FILES("files", true, true, TileOrder.TMS, Scheme.values()) {
       @Override
       boolean isUriSupported(URI uri) {
         final String path = uri.getPath();
@@ -245,26 +255,29 @@ public record TileArchiveConfig(
       }
     },
 
-    CSV("csv", true, true, TileOrder.TMS),
+    CSV("csv", true, true, TileOrder.TMS, Scheme.values()),
     /** identical to {@link Format#CSV} - except for the column separator */
-    TSV("tsv", true, true, TileOrder.TMS),
+    TSV("tsv", true, true, TileOrder.TMS, Scheme.values()),
 
-    PROTO("proto", true, true, TileOrder.TMS),
+    PROTO("proto", true, true, TileOrder.TMS, Scheme.values()),
     /** identical to {@link Format#PROTO} */
-    PBF("pbf", true, true, TileOrder.TMS),
+    PBF("pbf", true, true, TileOrder.TMS, Scheme.values()),
 
-    JSON("json", true, true, TileOrder.TMS);
+    JSON("json", true, true, TileOrder.TMS, Scheme.values());
 
     private final String id;
     private final boolean supportsAppend;
     private final boolean supportsConcurrentWrites;
     private final TileOrder order;
+    private final Set<Scheme> supportedSchemes;
 
-    Format(String id, boolean supportsAppend, boolean supportsConcurrentWrites, TileOrder order) {
+    Format(String id, boolean supportsAppend, boolean supportsConcurrentWrites, TileOrder order,
+      Scheme... supportedSchemes) {
       this.id = id;
       this.supportsAppend = supportsAppend;
       this.supportsConcurrentWrites = supportsConcurrentWrites;
       this.order = order;
+      this.supportedSchemes = Arrays.stream(supportedSchemes).collect(Collectors.toUnmodifiableSet());
     }
 
     public TileOrder preferredOrder() {
@@ -291,10 +304,16 @@ public record TileArchiveConfig(
     boolean isQueryFormatSupported(String queryFormat) {
       return id.equals(queryFormat);
     }
+
+    boolean isSchemeSupported(Scheme scheme) {
+      return supportedSchemes.contains(scheme);
+    }
   }
 
   public enum Scheme {
-    FILE("file");
+    FILE("file"),
+    S3("s3"),
+    S3_EXTENSION("s3x");
 
     private final String id;
 

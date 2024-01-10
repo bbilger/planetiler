@@ -7,6 +7,7 @@ import java.nio.file.FileStore;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
@@ -70,7 +71,7 @@ public class ResourceUsage {
 
   /** Requests {@code amount} bytes on the file system that contains {@code path}. */
   public ResourceUsage addDisk(Path path, long amount, String description) {
-    return path == null ? this : add(new DiskUsage(path), amount, description);
+    return DiskUsage.create(path).map(du -> add(du, amount, description)).orElse(this);
   }
 
   /** Requests {@code amount} bytes of RAM in the JVM heap. */
@@ -199,8 +200,18 @@ public class ResourceUsage {
   public record DiskUsage(FileStore fileStore) implements LimitedResource {
 
     /** Finds the {@link FileStore} that {@code path} will exist on. */
-    DiskUsage(Path path) {
+    private DiskUsage(Path path) {
       this(FileUtils.getFileStore(path));
+    }
+
+    /**
+     * Creates a new instance backed by the {@link Path paths} underlying {@link FileStore}.
+     * <p>
+     * If the path is null or the path has no {@link FileStore} (i.e. no limits), then an empty optional will be
+     * returned.
+     */
+    static Optional<DiskUsage> create(Path path) {
+      return Optional.ofNullable(path).map(FileUtils::getFileStore).map(DiskUsage::new);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.onthegomap.planetiler.files;
 
 import com.google.common.base.Preconditions;
+import com.onthegomap.planetiler.archive.TileArchiveConfig;
 import com.onthegomap.planetiler.archive.TileArchiveMetadata;
 import com.onthegomap.planetiler.archive.TileArchiveMetadataDeSer;
 import com.onthegomap.planetiler.archive.TileEncodingResult;
@@ -9,13 +10,16 @@ import com.onthegomap.planetiler.config.Arguments;
 import com.onthegomap.planetiler.geo.TileCoord;
 import com.onthegomap.planetiler.geo.TileOrder;
 import com.onthegomap.planetiler.stats.Counter;
+import com.onthegomap.planetiler.util.CloseShieldOutputStream;
 import com.onthegomap.planetiler.util.CountingOutputStream;
 import com.onthegomap.planetiler.util.FileUtils;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +52,10 @@ public class WriteableFilesArchive implements WriteableTileArchive {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(WriteableFilesArchive.class);
 
+  // list standard options as a workaround for https://github.com/awslabs/aws-java-nio-spi-for-s3/issues/158
+  private static final OpenOption[] STANDARD_WRITE_OPTIONS =
+    new OpenOption[]{StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE};
+
   private final Counter.MultiThreadCounter bytesWritten = Counter.newMultiThreadCounter();
 
   private final Path basePath;
@@ -57,7 +65,12 @@ public class WriteableFilesArchive implements WriteableTileArchive {
 
   private final TileOrder tileOrder;
 
-  private WriteableFilesArchive(Path basePath, Arguments options, boolean overwriteMetadata) {
+  private final TileArchiveConfig.Scheme scheme;
+
+  private WriteableFilesArchive(Path basePath, TileArchiveConfig.Scheme scheme, Arguments options,
+    boolean overwriteMetadata) {
+
+    this.scheme = scheme;
 
     final var pathAndScheme = FilesArchiveUtils.basePathWithTileSchemeEncoding(options, basePath);
     basePath = pathAndScheme.basePath();
@@ -80,8 +93,14 @@ public class WriteableFilesArchive implements WriteableTileArchive {
     this.tileOrder = tileSchemeEncoding.preferredTileOrder();
   }
 
-  public static WriteableFilesArchive newWriter(Path basePath, Arguments options, boolean overwriteMetadata) {
-    return new WriteableFilesArchive(basePath, options, overwriteMetadata);
+  public static WriteableFilesArchive newWriter(Path basePath, TileArchiveConfig.Scheme scheme, Arguments options,
+    boolean overwriteMetadata) {
+    return new WriteableFilesArchive(basePath, scheme, options, overwriteMetadata);
+  }
+
+  // visible for testing
+  static WriteableFilesArchive newWriter(Path basePath, Arguments options, boolean overwriteMetadata) {
+    return new WriteableFilesArchive(basePath, TileArchiveConfig.Scheme.FILE, options, overwriteMetadata);
   }
 
   @Override
@@ -104,8 +123,13 @@ public class WriteableFilesArchive implements WriteableTileArchive {
     if (metadataPath == null) {
       return;
     }
-    try (OutputStream s = new CountingOutputStream(Files.newOutputStream(metadataPath), bytesWritten::incBy)) {
-      TileArchiveMetadataDeSer.mbtilesMapper().writeValue(s, tileArchiveMetadata);
+    try (
+      OutputStream s =
+        new CountingOutputStream(Files.newOutputStream(metadataPath, STANDARD_WRITE_OPTIONS), bytesWritten::incBy)
+    ) {
+      // ObjectMapper#writeValue already closes the stream and s3-spi is not amused by dual close => shield
+      final var closeShieldOutputStream = new CloseShieldOutputStream(s);
+      TileArchiveMetadataDeSer.mbtilesMapper().writeValue(closeShieldOutputStream, tileArchiveMetadata);
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -121,14 +145,17 @@ public class WriteableFilesArchive implements WriteableTileArchive {
     // nothing to do here
   }
 
-  private static Path createValidateDirectory(Path p) {
+  private Path createValidateDirectory(Path p) {
     if (!Files.exists(p)) {
       FileUtils.createDirectory(p);
     }
-    Preconditions.checkArgument(
-      Files.isDirectory(p),
-      "require \"" + p + "\" to be a directory"
-    );
+    if (scheme == TileArchiveConfig.Scheme.FILE) {
+      Preconditions.checkArgument(
+        Files.isDirectory(p),
+        "require \"" + p + "\" to be a directory"
+      );
+    }
+
     return p;
   }
 
@@ -159,7 +186,7 @@ public class WriteableFilesArchive implements WriteableTileArchive {
       }
       lastCheckedFolder = folder;
       try {
-        Files.write(file, data);
+        Files.write(file, data, STANDARD_WRITE_OPTIONS);
       } catch (IOException e) {
         throw new UncheckedIOException(e);
       }

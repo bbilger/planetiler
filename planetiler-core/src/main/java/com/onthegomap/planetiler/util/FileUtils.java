@@ -154,6 +154,7 @@ public class FileUtils {
 
   /** Deletes all files under a directory and fails silently if it doesn't exist. */
   public static void deleteDirectory(Path path) {
+    LOGGER.atInfo().log("starting to delete directory directory {}", path);
     try (var walker = Files.walk(path)) {
       walker
         .sorted(Comparator.reverseOrder())
@@ -163,6 +164,7 @@ public class FileUtils {
     } catch (IOException e) {
       LOGGER.error("Unable to delete " + path, e);
     }
+    LOGGER.atInfo().log("deleted directory {}", path);
   }
 
   /** Deletes files or directories recursively, failing silently if missing. */
@@ -188,6 +190,7 @@ public class FileUtils {
         absolutePath = absolutePath.getParent();
       }
     }
+
     throw new UncheckedIOException("Cannot get file store for " + path, exception);
   }
 
